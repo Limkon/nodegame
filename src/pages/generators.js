@@ -5,7 +5,7 @@
  * 2. 修复了 XHTTP 协议的 Headers (User-Agent/Content-Type) 和 path 生成。
  * 3. Socks5 节点采用 Base64 编码认证信息，解决客户端导入问题。
  * 4. 支持 noLinks 参数以防止 WebDAV 推送时节点重复。
- * 5. 默认路径修正为 /?ed=2560。
+ * 5. [新增] 支持 Mandala 协议链接生成。
  */
 import { CONSTANTS } from '../constants.js';
 
@@ -34,6 +34,10 @@ export function generateBase64Subscription(protocol, id, hostName, tlsOnly, ctx,
         } else if (protocol === 'trojan') {
              const security = useTls ? `&security=tls&sni=${hostName}&fp=random` : '&security=none';
              finalLinks.push(`trojan://${id}@${ip}:${port}?${security}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${encodeURIComponent(remark)}`);
+        } else if (protocol === 'mandala') {
+             // [新增] Mandala 协议
+             const security = useTls ? `&security=tls&sni=${hostName}` : '';
+             finalLinks.push(`mandala://${id}@${ip}:${port}?type=ws&host=${hostName}&path=${encodeURIComponent(path)}${security}#${encodeURIComponent(remark)}`);
         } else if (protocol === 'ss') {
              const ss_method = 'none';
              const ss_b64 = btoa(`${ss_method}:${id}`);
@@ -107,7 +111,8 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
         } else if (protocol === 'socks') {
             proxy.username = id;
             proxy.password = ctx.dynamicUUID || ctx.userID;
-        }
+        } 
+        // Mandala 暂不支持 Clash，此处会跳过相关配置生成
 
         if (protocol === 'xhttp') {
             proxy.network = 'xhttp';
@@ -121,7 +126,7 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
                 }
             };
             proxy.servername = hostName;
-        } else if (protocol !== 'ss') {
+        } else if (protocol !== 'ss' && protocol !== 'mandala') { // Mandala 不支持 Clash
             proxy.network = 'ws';
             proxy['ws-opts'] = {
                 path: path,
@@ -130,8 +135,11 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
             if (useTls) proxy.servername = hostName;
         }
 
-        proxies.push(proxy);
-        proxyNames.push(remark);
+        // 仅添加支持的协议
+        if (protocol !== 'mandala') {
+            proxies.push(proxy);
+            proxyNames.push(remark);
+        }
     };
 
     if (ctx.addresses) ctx.addresses.forEach(addr => createProxy(addr, true));
@@ -215,6 +223,7 @@ export function generateMixedClashConfig(vlessId, trojanPass, hostName, tlsOnly,
 
     const protocols = ['vless', 'trojan', 'ss', 'socks'];
     if (enableXhttp) protocols.push('xhttp');
+    // Mandala 不加入 Clash 混合订阅
 
     if (ctx.addresses) {
         ctx.addresses.forEach(addr => {
@@ -284,6 +293,7 @@ rules:
 
 // 生成 SingBox 配置 (单协议)
 export function generateSingBoxConfig(protocol, id, hostName, tlsOnly, ctx) {
+    if (protocol === 'mandala') return '{}'; // Mandala 暂不支持 SingBox
     return generateMixedSingBoxConfig(id, ctx.dynamicUUID, hostName, tlsOnly, false, ctx, [protocol]);
 }
 
