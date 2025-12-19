@@ -11,7 +11,6 @@ export async function loadRemoteConfig(env) {
     if (!remoteUrl) return {};
 
     try {
-        // [修复] 2秒超时防止主页卡死
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
         const response = await fetch(remoteUrl, {
@@ -46,10 +45,15 @@ export async function getConfig(env, key, defaultValue = undefined) {
 
 export async function initializeContext(request, env) {
     await loadRemoteConfig(env);
+    // [新增] 读取全局 ECH 配置
+    const echConfig = await getConfig(env, 'ECH');
+    
     const ctx = {
         userID: '', dynamicUUID: '', userIDLow: '', proxyIP: '', dns64: '', socks5: '', go2socks5: [], banHosts: [], enableXhttp: false,
         httpsPorts: CONSTANTS.HTTPS_PORTS, startTime: Date.now(), adminPass: await getConfig(env, 'ADMIN_PASS'),
+        ech: echConfig || '' // 保存到上下文
     };
+    
     let rawUUID = await getConfig(env, 'UUID');
     let rawKey = await getConfig(env, 'KEY');
     ctx.userID = rawUUID;
