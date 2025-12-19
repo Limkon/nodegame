@@ -1,5 +1,11 @@
 /**
  * 文件名: src/pages/generators.js
+ * 说明: 
+ * 1. 包含 Base64、Clash、SingBox 的订阅生成逻辑。
+ * 2. 修复了 XHTTP 协议的 Headers (User-Agent/Content-Type) 和 path 生成。
+ * 3. Socks5 节点采用 Base64 编码认证信息，解决客户端导入问题。
+ * 4. 支持 noLinks 参数以防止 WebDAV 推送时节点重复。
+ * 5. [新增] 支持 Mandala 协议链接生成。
  */
 import { CONSTANTS } from '../constants.js';
 
@@ -8,7 +14,7 @@ export function generateBase64Subscription(protocol, id, hostName, tlsOnly, ctx,
     let finalLinks = [];
     const httpPorts = CONSTANTS.HTTP_PORTS;
     const httpsPorts = ctx.httpsPorts;
-    const path = '/?ed=2560'; 
+    const path = '/?ed=2560'; // 对齐原代码
 
     const createLink = (addr, useTls) => {
         const portList = useTls ? httpsPorts : httpPorts;
@@ -19,51 +25,39 @@ export function generateBase64Subscription(protocol, id, hostName, tlsOnly, ctx,
         const port = match[2] || portList[0];
         const remark = match[3] || `${hostName}-${protocol.toUpperCase()}`;
         
-        // [新增] ECH 参数逻辑：仅在 TLS 开启 且 全局 ech 有值时添加
-        const echParam = (useTls && ctx.ech) ? `&ech=${encodeURIComponent(ctx.ech)}` : '';
-
         if (protocol === 'xhttp') {
              const xhttpPath = '/' + id.substring(0, 8);
-             finalLinks.push(`vless://${id}@${ip}:${port}?encryption=none&security=tls&sni=${hostName}&fp=random&allowInsecure=1&type=xhttp&host=${hostName}&path=${encodeURIComponent(xhttpPath)}&mode=stream-one${echParam}#${encodeURIComponent(remark)}`);
+             finalLinks.push(`vless://${id}@${ip}:${port}?encryption=none&security=tls&sni=${hostName}&fp=random&allowInsecure=1&type=xhttp&host=${hostName}&path=${encodeURIComponent(xhttpPath)}&mode=stream-one#${encodeURIComponent(remark)}`);
         } else if (protocol === 'vless') {
              const security = useTls ? `&security=tls&sni=${hostName}&fp=random` : '&security=none';
-             // 附加 echParam
-             finalLinks.push(`vless://${id}@${ip}:${port}?encryption=none${security}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}${echParam}#${encodeURIComponent(remark)}`);
+             finalLinks.push(`vless://${id}@${ip}:${port}?encryption=none${security}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${encodeURIComponent(remark)}`);
         } else if (protocol === 'trojan') {
              const security = useTls ? `&security=tls&sni=${hostName}&fp=random` : '&security=none';
-             // 附加 echParam
-             finalLinks.push(`trojan://${id}@${ip}:${port}?${security}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}${echParam}#${encodeURIComponent(remark)}`);
+             finalLinks.push(`trojan://${id}@${ip}:${port}?${security}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${encodeURIComponent(remark)}`);
         } else if (protocol === 'mandala') {
+             // [新增] Mandala 协议
              const security = useTls ? `&security=tls&sni=${hostName}` : '';
-             // Mandala 协议特殊处理：ECH 放在 Hash 中
-             let hashPart = encodeURIComponent(remark);
-             if (useTls && ctx.ech) {
-                 // 格式：#备注&ech=XXX
-                 hashPart += `&ech=${encodeURIComponent(ctx.ech)}`;
-             }
-             finalLinks.push(`mandala://${id}@${ip}:${port}?type=ws&host=${hostName}&path=${encodeURIComponent(path)}${security}#${hashPart}`);
+             finalLinks.push(`mandala://${id}@${ip}:${port}?type=ws&host=${hostName}&path=${encodeURIComponent(path)}${security}#${encodeURIComponent(remark)}`);
         } else if (protocol === 'ss') {
              const ss_method = 'none';
              const ss_b64 = btoa(`${ss_method}:${id}`);
              let plugin_opts = `v2ray-plugin;host=${hostName};path=${encodeURIComponent(path)}`;
-             if (useTls) {
-                 plugin_opts += `;tls;sni=${hostName}`;
-                 // SS 在 plugin 参数中追加 ech
-                 if (ctx.ech) plugin_opts += `;ech=${encodeURIComponent(ctx.ech)}`;
-             }
+             if (useTls) plugin_opts += `;tls;sni=${hostName}`;
              finalLinks.push(`ss://${ss_b64}@${ip}:${port}/?plugin=${encodeURIComponent(plugin_opts)}#${encodeURIComponent(remark)}`);
         } else if (protocol === 'socks') {
              const security = useTls ? `security=tls&sni=${hostName}&path=${encodeURIComponent(path)}` : `path=${encodeURIComponent(path)}`;
+             // [修复] 将 User:Pass 进行 Base64 编码，解决导入无密码问题
+             // 格式: socks://BASE64(User:Pass)@Host:Port?params#Remark
              const password = ctx.dynamicUUID || ctx.userID;
              const auth = btoa(`${id}:${password}`);
-             // 附加 echParam
-             finalLinks.push(`socks://${auth}@${ip}:${port}?${security}&transport=ws${echParam}#${encodeURIComponent(remark)}`);
+             finalLinks.push(`socks://${auth}@${ip}:${port}?${security}&transport=ws#${encodeURIComponent(remark)}`);
         }
     };
 
     if (ctx.addresses) ctx.addresses.forEach(addr => createLink(addr, true));
     if (!tlsOnly && ctx.addressesnotls) ctx.addressesnotls.forEach(addr => createLink(addr, false));
 
+    // 仅当 noLinks 为 false 且协议不是 xhttp 时才附加硬编码链接
     if (!noLinks && protocol !== 'xhttp' && ctx.hardcodedLinks) {
         finalLinks = finalLinks.concat(ctx.hardcodedLinks);
     }
@@ -71,7 +65,7 @@ export function generateBase64Subscription(protocol, id, hostName, tlsOnly, ctx,
     return finalLinks.join('\n');
 }
 
-// 生成 Clash 配置 (单协议) - Clash 不支持 ECH，保持原样
+// 生成 Clash 配置 (单协议)
 export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
     let proxies = [];
     const proxyNames = [];
@@ -118,6 +112,7 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
             proxy.username = id;
             proxy.password = ctx.dynamicUUID || ctx.userID;
         } 
+        // Mandala 暂不支持 Clash，此处会跳过相关配置生成
 
         if (protocol === 'xhttp') {
             proxy.network = 'xhttp';
@@ -131,7 +126,7 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
                 }
             };
             proxy.servername = hostName;
-        } else if (protocol !== 'ss' && protocol !== 'mandala') { 
+        } else if (protocol !== 'ss' && protocol !== 'mandala') { // Mandala 不支持 Clash
             proxy.network = 'ws';
             proxy['ws-opts'] = {
                 path: path,
@@ -140,6 +135,7 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
             if (useTls) proxy.servername = hostName;
         }
 
+        // 仅添加支持的协议
         if (protocol !== 'mandala') {
             proxies.push(proxy);
             proxyNames.push(remark);
@@ -152,9 +148,8 @@ export function generateClashConfig(protocol, id, hostName, tlsOnly, ctx) {
     return buildClashYaml(proxies, proxyNames);
 }
 
-// 生成混合 Clash 配置 - 保持原样
+// 生成混合 Clash 配置 (VLESS + Trojan + SS + Socks5 + XHTTP)
 export function generateMixedClashConfig(vlessId, trojanPass, hostName, tlsOnly, enableXhttp, ctx) {
-    // Clash 暂不支持 ECH，这里不需要修改逻辑
     let proxies = [];
     const proxyNames = [];
     const httpPorts = CONSTANTS.HTTP_PORTS;
@@ -228,6 +223,7 @@ export function generateMixedClashConfig(vlessId, trojanPass, hostName, tlsOnly,
 
     const protocols = ['vless', 'trojan', 'ss', 'socks'];
     if (enableXhttp) protocols.push('xhttp');
+    // Mandala 不加入 Clash 混合订阅
 
     if (ctx.addresses) {
         ctx.addresses.forEach(addr => {
@@ -249,6 +245,7 @@ export function generateMixedClashConfig(vlessId, trojanPass, hostName, tlsOnly,
     return buildClashYaml(proxies, proxyNames);
 }
 
+// 辅助函数: 构建 Clash YAML 字符串
 function buildClashYaml(proxies, proxyNames) {
     const yamlProxies = proxies.map(p => {
         let s = `- name: ${p.name}\n  type: ${p.type}\n  server: ${p.server}\n  port: ${p.port}\n  tls: ${p.tls}\n  udp: ${p.udp}\n  skip-cert-verify: true\n`;
@@ -296,7 +293,7 @@ rules:
 
 // 生成 SingBox 配置 (单协议)
 export function generateSingBoxConfig(protocol, id, hostName, tlsOnly, ctx) {
-    if (protocol === 'mandala') return '{}'; 
+    if (protocol === 'mandala') return '{}'; // Mandala 暂不支持 SingBox
     return generateMixedSingBoxConfig(id, ctx.dynamicUUID, hostName, tlsOnly, false, ctx, [protocol]);
 }
 
@@ -362,13 +359,6 @@ export function generateMixedSingBoxConfig(vlessId, trojanPass, hostName, tlsOnl
                 insecure: true,
                 utls: { enabled: true, fingerprint: "chrome" }
             };
-            // [新增] 当全局 ech 有值时，注入 Sing-box ECH 配置
-            if (ctx.ech) {
-                outbound.tls.ech = {
-                    enabled: true,
-                    config: [ctx.ech]
-                };
-            }
         }
 
         outbounds.push(outbound);

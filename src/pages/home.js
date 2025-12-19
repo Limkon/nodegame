@@ -9,11 +9,8 @@ export async function generateHomePage(env, ctx, hostName) {
     const isWorkersDev = hostName.includes("workers.dev");
     const httpPorts = CONSTANTS.HTTP_PORTS;
     const httpsPorts = ctx.httpsPorts;
-    const path = '/?ed=2560'; 
+    const path = '/?ed=2560'; // Default VLESS path
     const cdnIP = ctx.proxyIP || 'cloudflare.com';
-    
-    // [新增] ECH 参数字符串 (仅当 ctx.ech 有值时生成)
-    const echParam = ctx.ech ? `&ech=${encodeURIComponent(ctx.ech)}` : '';
     
     // 计算订阅路径哈希
     const subPathNames = [
@@ -22,7 +19,7 @@ export async function generateHomePage(env, ctx, hostName) {
         'trojan', 'trojan-tls', 'trojan-clash', 'trojan-clash-tls', 'trojan-sb', 'trojan-sb-tls',
         'ss', 'ss-tls', 'ss-clash', 'ss-clash-tls', 'ss-sb', 'ss-sb-tls',
         'socks', 'socks-tls', 'socks-clash', 'socks-clash-tls', 'socks-sb', 'socks-sb-tls',
-        'mandala-tls', 
+        'mandala-tls', // [新增] Mandala 单独订阅路径
         'xhttp-tls', 'xhttp-clash-tls', 'xhttp-sb-tls'
     ];
     
@@ -40,36 +37,27 @@ export async function generateHomePage(env, ctx, hostName) {
         subs[key] = `https://${hostName}${subPathPrefix}${hashes[i]}`;
     });
 
-    // 生成节点链接示例 (自动注入 ECH)
+    // 生成节点链接示例
+    const vless_tls = `vless://${ctx.userID}@${hostName}:${httpsPorts[0]}?encryption=none&security=tls&sni=${hostName}&fp=random&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${hostName}-VLESS-TLS`;
+    const trojan_tls = `trojan://${ctx.dynamicUUID}@${hostName}:${httpsPorts[0]}?security=tls&sni=${hostName}&fp=random&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${hostName}-TROJAN-TLS`;
     
-    // VLESS
-    const vless_tls = `vless://${ctx.userID}@${hostName}:${httpsPorts[0]}?encryption=none&security=tls&sni=${hostName}&fp=random&type=ws&host=${hostName}&path=${encodeURIComponent(path)}${echParam}#${hostName}-VLESS-TLS`;
-    
-    // Trojan
-    const trojan_tls = `trojan://${ctx.dynamicUUID}@${hostName}:${httpsPorts[0]}?security=tls&sni=${hostName}&fp=random&type=ws&host=${hostName}&path=${encodeURIComponent(path)}${echParam}#${hostName}-TROJAN-TLS`;
-    
-    // Shadowsocks (SS 的 ECH 放在 plugin 参数中)
     const ss_b64 = btoa(`none:${ctx.dynamicUUID}`);
-    let ss_plugin = `v2ray-plugin;tls;host=${hostName};sni=${hostName};path=${encodeURIComponent(path)}`;
-    if (ctx.ech) ss_plugin += `;ech=${encodeURIComponent(ctx.ech)}`;
-    const ss_tls = `ss://${ss_b64}@${hostName}:${httpsPorts[0]}/?plugin=${encodeURIComponent(ss_plugin)}#${hostName}-SS-TLS`;
+    const ss_tls = `ss://${ss_b64}@${hostName}:${httpsPorts[0]}/?plugin=${encodeURIComponent(`v2ray-plugin;tls;host=${hostName};sni=${hostName};path=${encodeURIComponent(path)}`)}#${hostName}-SS-TLS`;
     
-    // Socks5
     const socks_auth = btoa(`${ctx.userID}:${ctx.dynamicUUID}`);
-    const socks_tls = `socks://${socks_auth}@${hostName}:${httpsPorts[0]}?transport=ws&security=tls&sni=${hostName}&path=${encodeURIComponent(path)}${echParam}#${hostName}-SOCKS-TLS`;
+    const socks_tls = `socks://${socks_auth}@${hostName}:${httpsPorts[0]}?transport=ws&security=tls&sni=${hostName}&path=${encodeURIComponent(path)}#${hostName}-SOCKS-TLS`;
     
-    // Mandala (ECH 放在 Hash 中)
-    let mandalaHash = `${hostName}-MANDALA-TLS`;
-    if (ctx.ech) mandalaHash += `&ech=${encodeURIComponent(ctx.ech)}`;
-    const mandala_tls = `mandala://${ctx.dynamicUUID}@${hostName}:${httpsPorts[0]}?security=tls&sni=${hostName}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${mandalaHash}`;
+    // [新增] Mandala 链接生成
+    // 格式: mandala://password@host:port?params#remark
+    const mandala_tls = `mandala://${ctx.dynamicUUID}@${hostName}:${httpsPorts[0]}?security=tls&sni=${hostName}&type=ws&host=${hostName}&path=${encodeURIComponent(path)}#${hostName}-MANDALA-TLS`;
     
-    // XHTTP
-    const xhttp_tls = `vless://${ctx.userID}@${hostName}:${httpsPorts[0]}?encryption=none&security=tls&sni=${hostName}&fp=random&allowInsecure=1&type=xhttp&host=${hostName}&path=${encodeURIComponent('/' + ctx.userID.substring(0, 8))}&mode=stream-one${echParam}#${hostName}-XHTTP-TLS`;
+    const xhttp_tls = `vless://${ctx.userID}@${hostName}:${httpsPorts[0]}?encryption=none&security=tls&sni=${hostName}&fp=random&allowInsecure=1&type=xhttp&host=${hostName}&path=${encodeURIComponent('/' + ctx.userID.substring(0, 8))}&mode=stream-one#${hostName}-XHTTP-TLS`;
 
     // HTML 模板片段
     const copyBtn = (val) => `<div class="input-group mb-2"><input type="text" class="form-control" value="${val}" readonly><button class="btn btn-secondary" onclick="copyToClipboard('${val}')">复制</button></div>`;
     
     let xhttpHtml = '';
+    // [修改] 标题增加 Mandala
     let mixedTitle = '混合订阅 (VLESS+Trojan+SS+Socks5+Mandala)'; 
 
     if (ctx.enableXhttp) {
