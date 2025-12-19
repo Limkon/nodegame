@@ -1,6 +1,5 @@
 /**
  * 文件名: src/pages/admin.js
- * 修改内容: 修复 WebDAV 推送时 ctx 参数缺失导致报错的问题。
  */
 import { getConfig, loadRemoteConfig } from '../config.js';
 import { executeWebDavPush } from '../handlers/webdav.js';
@@ -21,6 +20,7 @@ export async function handleEditConfig(request, env, ctx) {
         ['ADMIN_PASS', '后台管理访问密码', '设置后，通过 /KEY 路径访问管理页需输入此密码。留空则不开启验证。', '例如: 123456', 'text'],
         ['UUID', 'UUID (用户ID/密码)', 'VLESS的用户ID, 也是Trojan/SS的密码。', '例如: 1234567', 'text'],
         ['KEY', '动态UUID密钥', '用于生成动态UUID, 填写后将覆盖上方静态UUID。', '例如: my-secret-key', 'text'],
+        ['ECH', 'ECH 配置字符串', '填入即开启全局 ECH (所有协议)。需配合 Cloudflare 后台开启 ECH 功能。', '例如: AEx+DQxu...', 'text'],
         ['TIME', '动态UUID有效时间 (天)', '动态UUID的有效周期, 单位为天。', '例如: 1 (表示1天)', 'number'],
         ['UPTIME', '动态UUID更新时间 (小时)', '动态UUID在周期的第几个小时更新。', '例如: 0 (表示0点)', 'number'],
         ['PROXYIP', '出站代理IP (ProxyIP)', 'Worker访问目标网站时使用的IP, 多个用逗号隔开。', '例如: 1.2.3.4 或 [2606::]', 'text'],
@@ -73,15 +73,16 @@ export async function handleEditConfig(request, env, ctx) {
             // 触发 WebDAV 强制推送
             const hostName = request.headers.get('Host');
             
-            // [修复] 获取 enableXhttp 配置，防止 generateBase64Subscription 报错
+            // 获取 enableXhttp 配置
             const enableXhttp = (await getConfig(env, 'EX', 'false')).toLowerCase() === 'true';
             
-            // [修复] 重新构建 ctx 必须包含 httpsPorts 和 enableXhttp
+            // 构建上下文，包含 ech
             const newCtx = { 
                 userID: await getConfig(env, 'UUID'), 
                 dynamicUUID: await getConfig(env, 'KEY'), 
-                httpsPorts: CONSTANTS.HTTPS_PORTS, // 关键修复：补充端口列表
-                enableXhttp: enableXhttp,          // 关键修复：补充 XHTTP 开关
+                httpsPorts: CONSTANTS.HTTPS_PORTS, 
+                enableXhttp: enableXhttp,          
+                ech: await getConfig(env, 'ECH'), // 传递 ECH 配置
                 waitUntil: ctx.waitUntil.bind(ctx) 
             };
             
