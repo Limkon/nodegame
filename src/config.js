@@ -4,6 +4,8 @@ import { cleanList, generateDynamicUUID, isStrictV4UUID } from './utils/helpers.
 let remoteConfigCache = {};
 
 export async function loadRemoteConfig(env) {
+    // [修改] 注释掉远程配置加载逻辑
+    /*
     let remoteUrl = "";
     if (env.KV) remoteUrl = await env.KV.get('REMOTE_CONFIG');
     if (!remoteUrl) remoteUrl = env.REMOTE_CONFIG || 'https://raw.githubusercontent.com/Limkon/Monitoring/refs/heads/main/tools/conklon.json';
@@ -11,7 +13,6 @@ export async function loadRemoteConfig(env) {
     if (!remoteUrl) return {};
 
     try {
-        // [修复] 2秒超时防止主页卡死
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
         const response = await fetch(remoteUrl, {
@@ -31,21 +32,27 @@ export async function loadRemoteConfig(env) {
             }
         }
     } catch (e) { console.warn('Config load skipped:', e.message); }
+    */
+    remoteConfigCache = {}; // 强制为空
     return remoteConfigCache;
 }
 
 export async function getConfig(env, key, defaultValue = undefined) {
     let val = undefined;
     if (env.KV) val = await env.KV.get(key);
-    if (!val && remoteConfigCache[key]) val = remoteConfigCache[key];
+    // [修改] 注释掉远程配置回退
+    // if (!val && remoteConfigCache[key]) val = remoteConfigCache[key];
     if (!val && env[key]) val = env[key];
-    if (!val && key === 'UUID') val = remoteConfigCache.UUID || env.UUID || env.uuid || env.PASSWORD || env.pswd || CONSTANTS.SUPER_PASSWORD;
-    if (!val && key === 'KEY') val = remoteConfigCache.KEY || env.KEY || env.TOKEN;
+    
+    // [修改] 移除 remoteConfigCache 引用
+    if (!val && key === 'UUID') val = /*remoteConfigCache.UUID ||*/ env.UUID || env.uuid || env.PASSWORD || env.pswd || CONSTANTS.SUPER_PASSWORD;
+    if (!val && key === 'KEY') val = /*remoteConfigCache.KEY ||*/ env.KEY || env.TOKEN;
     return val !== undefined ? val : defaultValue;
 }
 
 export async function initializeContext(request, env) {
-    await loadRemoteConfig(env);
+    // [修改] 虽已禁用内部逻辑，但为了清晰也注释掉调用
+    // await loadRemoteConfig(env);
     const ctx = {
         userID: '', dynamicUUID: '', userIDLow: '', proxyIP: '', dns64: '', socks5: '', go2socks5: [], banHosts: [], enableXhttp: false,
         httpsPorts: CONSTANTS.HTTPS_PORTS, startTime: Date.now(), adminPass: await getConfig(env, 'ADMIN_PASS'),
