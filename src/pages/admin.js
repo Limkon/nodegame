@@ -1,9 +1,9 @@
 /**
  * 文件名: src/pages/admin.js
- * 修改内容: 修复 WebDAV 推送时 ctx 参数缺失导致报错的问题。
+ * 修改内容: 注释掉 WebDAV 推送和远程配置相关代码。
  */
-import { getConfig, loadRemoteConfig } from '../config.js';
-import { executeWebDavPush } from '../handlers/webdav.js';
+import { getConfig /*, loadRemoteConfig*/ } from '../config.js'; // [修改]
+// import { executeWebDavPush } from '../handlers/webdav.js'; // [修改]
 import { CONSTANTS } from '../constants.js';
 import { cleanList } from '../utils/helpers.js';
 
@@ -70,22 +70,21 @@ export async function handleEditConfig(request, env, ctx) {
             }
             await Promise.all(savePromises);
 
-            // 触发 WebDAV 强制推送
+            // [修改] 注释掉 WebDAV 强制推送逻辑
+            /*
             const hostName = request.headers.get('Host');
-            
-            // [修复] 获取 enableXhttp 配置，防止 generateBase64Subscription 报错
             const enableXhttp = (await getConfig(env, 'EX', 'false')).toLowerCase() === 'true';
             
-            // [修复] 重新构建 ctx 必须包含 httpsPorts 和 enableXhttp
             const newCtx = { 
                 userID: await getConfig(env, 'UUID'), 
                 dynamicUUID: await getConfig(env, 'KEY'), 
-                httpsPorts: CONSTANTS.HTTPS_PORTS, // 关键修复：补充端口列表
-                enableXhttp: enableXhttp,          // 关键修复：补充 XHTTP 开关
+                httpsPorts: CONSTANTS.HTTPS_PORTS, 
+                enableXhttp: enableXhttp,
                 waitUntil: ctx.waitUntil.bind(ctx) 
             };
             
             await executeWebDavPush(env, hostName, newCtx, true);
+            */
 
             return new Response('保存成功', { status: 200 });
         } catch (e) {
@@ -94,7 +93,10 @@ export async function handleEditConfig(request, env, ctx) {
     }
     
     // 处理 GET 渲染页面
-    const remoteConfig = await loadRemoteConfig(env);
+    // [修改] 注释掉 loadRemoteConfig
+    // const remoteConfig = await loadRemoteConfig(env);
+    const remoteConfig = {}; // [修改] 使用空对象替代
+    
     const kvPromises = configItems.map(item => env.KV.get(item[0]));
     const kvValues = await Promise.all(kvPromises);
     let formHtml = '';
@@ -112,8 +114,9 @@ export async function handleEditConfig(request, env, ctx) {
         
         let envHint = '';
         if (key !== 'ADD.txt' && key !== 'BESTIP_SOURCES') {
-            if (remoteValue) envHint = `<div class="env-hint">远程配置: <code>${remoteValue}</code> (优先级高于环境变量)</div>`;
-            else if (envValue) envHint = `<div class="env-hint">环境变量: <code>${envValue}</code></div>`;
+            // [修改] 移除远程配置的提示显示
+            // if (remoteValue) envHint = `<div class="env-hint">远程配置: <code>${remoteValue}</code> (优先级高于环境变量)</div>`;
+            /*else*/ if (envValue) envHint = `<div class="env-hint">环境变量: <code>${envValue}</code></div>`;
         }
         
         const escapeHtml = (str) => { if (!str) return ''; return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); };
@@ -124,12 +127,12 @@ export async function handleEditConfig(request, env, ctx) {
         } else {
             inputField = `<input type="${type}" class="form-control" id="${key}" name="${key}" value="${escapeHtml(displayValue)}" placeholder="${escapeHtml(placeholder)}">`;
         }
-        formHtml += `<div class="mb-3"><label for="${key}" class="form-label">${label}</label>${inputField}<div class="form-text">${desc} (留空则使用远程配置、环境变量或默认值)</div>${envHint}</div><hr>`;
+        formHtml += `<div class="mb-3"><label for="${key}" class="form-label">${label}</label>${inputField}<div class="form-text">${desc} (留空则使用环境变量或默认值)</div>${envHint}</div><hr>`;
     });
 
     const html = `<!DOCTYPE html><html><head><title>配置管理</title><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{background-color:#f8f9fa}.container{max-width:800px;margin-top:20px;margin-bottom:20px;background-color:#fff;padding:2rem;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,.05)}.form-text{font-size:0.875em}.env-hint{font-size:0.8em;color:#6c757d;margin-top:4px}code{color:#d63384}.btn-group{gap:10px}.save-status{margin-left:15px;color:#666}textarea{font-family:monospace;font-size:0.9em}</style></head><body><div class="container">` +
     `<h2>${FileName} 配置设置</h2>` +
-    '<p>在此页面修改的配置将保存在KV中, 优先级: <b>KV > 远程配置 > 环境变量</b>。如果某项留空并保存, 则该项配置将回退到使用下级配置或默认值。</p>' +
+    '<p>在此页面修改的配置将保存在KV中, 优先级: <b>KV > 环境变量</b>。如果某项留空并保存, 则该项配置将回退到使用下级配置或默认值。</p>' +
     '<form id="config-form">' + formHtml + '<div class="btn-group"><button type="button" class="btn btn-secondary" onclick="goBack()">返回配置页</button><button type="button" class="btn btn-info" onclick="goBestIP()">在线优选IP</button><button type="submit" class="btn btn-primary" id="save-btn">保存所有配置</button><span class="save-status" id="saveStatus"></span></div></form>' +
     '<script>function goBack(){const e=window.location.pathname.substring(0,window.location.pathname.lastIndexOf("/"));window.location.href=e+"/"}function goBestIP(){window.location.href=window.location.pathname.replace("/edit","/bestip")}document.getElementById("config-form").addEventListener("submit",function(e){e.preventDefault();const t=document.getElementById("save-btn"),n=document.getElementById("saveStatus"),o=new FormData(this),a=o.get("BESTIP_SOURCES");if(a)try{JSON.parse(a)}catch(e){return alert("保存失败: BestIP IP源 不是有效的 JSON 格式。\\n"+(e.message||e)),n.textContent="保存出错: JSON 格式错误",void 0}t.disabled=!0,t.textContent="保存中...",n.textContent="",fetch(window.location.href,{method:"POST",body:o}).then(e=>{if(e.ok){const o=(new Date).toLocaleString();n.textContent="保存成功 "+o,alert("保存成功！部分设置可能需要几秒钟生效。")}else return e.text().then(e=>Promise.reject(e))}).catch(e=>{n.textContent="保存出错: "+e}).finally(()=>{t.disabled=!1,t.textContent="保存所有配置"})});</script></body></html>';
     return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8" } });
